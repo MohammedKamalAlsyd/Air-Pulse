@@ -132,12 +132,15 @@ services:
         # Optional — enable SSL for Spark web UIs and RPC (production).
     networks:
       - airpulsenetwork
-    # Optional healthcheck: ensures Master web UI responds; workers can wait on master health if configured.
+    # Robust Healthcheck:
+    # 1. Checks that the Master Web UI (8080) is serving the cluster status JSON (implies internal logic is ready).
+    # 2. Checks that the Master RPC Port (7077) is open using bash /dev/tcp (ensures workers can connect).
     healthcheck:
-      test: ["CMD", "bash", "-c", "curl -fs http://localhost:8080/ || exit 1"]
+      test: ["CMD", "bash", "-c", "curl -sf http://spark-master:8080/json > /dev/null && echo > /dev/tcp/spark-master/7077"]
       interval: 10s
       timeout: 5s
-      retries: 8
+      retries: 5
+      start_period: 10s # Allow JVM start time
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077
 
 
@@ -148,7 +151,6 @@ services:
     <<: *spark-common
     container_name: spark-worker-1
     hostname: spark-worker-1
-
 
   spark-worker-2:
     <<: *spark-common
