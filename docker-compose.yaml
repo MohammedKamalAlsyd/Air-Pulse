@@ -4,7 +4,7 @@ x-spark-common: &spark-common
   volumes:
     - ./jobs:/opt/spark/jobs           # share local jobs folder into containers (bind-mount)
   networks:
-    - smartcitiesnetwork
+    - airpulsenetwork
   # start the spark worker pointing at the master (single-line command)
   command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
   environment:
@@ -33,7 +33,7 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
         # Optional — ZK tick time in ms; controls session timeout tick granularity (default often 2000).
     networks:
-      - smartcitiesnetwork
+      - airpulsenetwork
     healthcheck:
       test: ["CMD", "bash", "-c", "echo ruok | nc -w 2 localhost 2181 | grep imok"]
       interval: 10s
@@ -94,7 +94,7 @@ services:
       CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
         # Optional — telemetry/identification (anonymous for dev). Set appropriately for support/legal needs.
     networks:
-      - smartcitiesnetwork
+      - airpulsenetwork
     # Broker healthcheck: uses kafka-broker-api-versions to verify broker is ready to serve client requests.
     healthcheck:
       test: ["CMD", "bash", "-c", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
@@ -127,7 +127,7 @@ services:
       - SPARK_SSL_ENABLED=no
         # Optional — enable SSL for Spark web UIs and RPC (production).
     networks:
-      - smartcitiesnetwork
+      - airpulsenetwork
     # Optional healthcheck: ensures Master web UI responds; workers can wait on master health if configured.
     healthcheck:
       test: ["CMD", "bash", "-c", "curl -fs http://localhost:8080/ || exit 1"]
@@ -161,5 +161,5 @@ services:
 
 # network declaration (bridge is fine for local development)
 networks:
-  smartcitiesnetwork:
+  airpulsenetwork:
     driver: bridge
