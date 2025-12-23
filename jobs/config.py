@@ -1,3 +1,4 @@
+import os
 from pyspark.sql.types import (
     StructType,
     StructField,
@@ -12,9 +13,9 @@ from pyspark.sql.types import (
 # Environment / Secrets
 # -----------------------
 configuration = {
-    "AWS_ACCESS_KEY_ID": "your_access_key_id",
-    "AWS_SECRET_ACCESS_KEY": "your_secret_access_key",
-    # Add other environment defaults you need here (KAFKA, S3_BUCKET, etc.)
+    "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
+    "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
+    "S3_BUCKET_NAME": os.getenv("S3_BUCKET_NAME", "spark-streaming-bucket"),
 }
 
 # -----------------------
