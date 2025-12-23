@@ -63,7 +63,7 @@ services:
         # Mandatory for ZK-based Kafka — address where broker finds ZooKeeper (service:port on Docker network).
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
         # Optional but recommended — maps listener names to security protocols (here both are PLAINTEXT).
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://broker:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
         # Mandatory for client connectivity correctness:
         # - Use a container-reachable address (broker:29092) for other containers.
         # - Use a host-reachable address (broker:9092) for host tools/clients.
@@ -87,16 +87,13 @@ services:
         # Optional — JMX port number for JVM monitoring. Expose via ports if you need remote JMX.
       KAFKA_JMX_HOSTNAME: broker
         # Optional — JMX hostname binding; used by JMX clients to connect.
-      KAFKA_CONFLUENT_SCHEMA_REGISTRY_URL: http://schema-registry:8081
-        # Optional — only needed if you use Confluent Schema Registry (Avro/Protobuf workflows).
       CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: broker:9092
         # Optional — where Confluent metrics reporter sends metrics (use a broker address).
       CONFLUENT_METRICS_REPORTER_TOPIC_REPLICATION: 1
         # Optional — replication factor for the metrics topic (dev=1).
       CONFLUENT_METRICS_ENABLED: 'true'
         # Optional — enable Confluent metrics reporter (true/false).
-      CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
-        # Optional — telemetry/identification (anonymous for dev). Set appropriately for support/legal needs.
+
     networks:
       - airpulsenetwork
     # Broker healthcheck: uses kafka-broker-api-versions to verify broker is ready to serve client requests.

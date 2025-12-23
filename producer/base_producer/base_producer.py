@@ -52,10 +52,9 @@ class BaseProducer:
         self._value_serializer = value_serializer
         self._key_serializer = key_serializer
         
-        # Singeleton producer instance
         self._producer = None
         if kafka_conf:
-            if self._producer is None:
+            if Producer is None:
                 raise RuntimeError("confluent_kafka is required to use kafka_conf but is not installed")
             self._producer = Producer(kafka_conf)
 
@@ -80,7 +79,7 @@ class BaseProducer:
         value: Dict[str, Any],
         key: Optional[Any] = None,
         on_delivery: Optional[DeliveryCallback] = None,
-        flush: bool = True,
+        flush: bool = False,
     ) -> None:
         """
         Produce a message.
@@ -105,6 +104,8 @@ class BaseProducer:
             # Use the passed callback, or fall back to the instance method
             callback_to_use = on_delivery or self._default_delivery_callback
             callback_to_use(err, msg_info)
+        
+        print(f"[kafka][producing] topic={topic} key={serialized_key.decode('utf-8') if serialized_key else None} value={serialized_value.decode('utf-8')}")
 
         self._producer.produce(topic=topic, value=serialized_value, key=serialized_key, callback=_cb)
 

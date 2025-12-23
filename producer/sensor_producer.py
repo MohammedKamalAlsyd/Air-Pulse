@@ -56,5 +56,3 @@ class SensorProducer(BaseProducer):
                 )
                 self._battery_state[sensor_id] = health["battery_level"]
                 self.produce(self.health_topic, health, key=sensor_id)
-
-        self.flush()
