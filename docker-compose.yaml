@@ -1,148 +1,89 @@
-# ---- shared spark worker configuration (anchor) ----
+# ---- Shared Spark Worker Configuration ----
 x-spark-common: &spark-common
   image: apache/spark:4.1.0-scala2.13-java21-python3-r-ubuntu
   volumes:
-    - ./jobs:/opt/spark/jobs           # share local jobs folder into containers (bind-mount)
+    - ./jobs:/opt/spark/jobs
   networks:
     - airpulsenetwork
-  # start the spark worker pointing at the master (single-line command)
   command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
   environment:
     SPARK_MODE: Worker
-      # Optional — used by image entrypoint for clarity; worker behavior is implied by the command.
     SPARK_WORKER_CORES: "2"
-      # Optional — number of cores the worker offers (string form). Default depends on image; set for predictability.
     SPARK_WORKER_MEMORY: "1g"
-      # Optional — amount of memory the worker reports to master for executors. Set to available RAM per worker.
     SPARK_MASTER_URL: spark://spark-master:7077
-      # Mandatory (practical) — how the worker finds the master; must be reachable on the Docker network.
   depends_on:
     spark-master:
       condition: service_healthy
 
 services:
-  # -------------------
-  # ZooKeeper (Confluent image)
-  # -------------------
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.7.7
-    hostname: zookeeper
-    container_name: zookeeper
-    ports:
-      - "2181:2181"   # Host:Container mapping (exposes ZK client port to host)
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-        # Mandatory for this image — port ZK listens on for clients (Kafka). Typical: 2181.
-      ZOOKEEPER_TICK_TIME: 2000
-        # Optional — ZK tick time in ms; controls session timeout tick granularity (default often 2000).
-    networks:
-      - airpulsenetwork
-    healthcheck:
-      test: ["CMD", "bash", "-c", "echo ruok | nc -w 2 zookeeper 2181"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  # -------------------
-  # Kafka broker (Confluent image, pinned)
+# -------------------
+  # Kafka Broker (KRaft Mode - Auto-Formatting)
   # -------------------
   broker:
-    image: confluentinc/cp-server:7.7.7
+    image: confluentinc/cp-kafka:7.7.7
     hostname: broker
     container_name: broker
-    depends_on:
-      zookeeper:
-        condition: service_healthy
     ports:
-      - "9092:9092"   # Expose broker client port to host (host_port:container_port)
-      - "9101:9101"   # Expose JMX or metrics port to host (when configured)
+      - "9092:9092"
     environment:
-      KAFKA_BROKER_ID: 1
-        # Mandatory — unique integer id for this broker in the cluster (must be different per broker).
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-        # Mandatory for ZK-based Kafka — address where broker finds ZooKeeper (service:port on Docker network).
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-        # Optional but recommended — maps listener names to security protocols (here both are PLAINTEXT).
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
-        # Mandatory for client connectivity correctness:
-        # - Use a container-reachable address (broker:29092) for other containers.
-        # - Use a host-reachable address (broker:9092) for host tools/clients.
-        # NOTE: If you run remotely, change broker to the host IP or NAT address used by clients.
-      # Confluent metrics / support settings (optional in dev; useful for monitoring)
-      KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
-        # Optional — enables Confluent's metrics reporter class.
+      # --- KRaft Required Settings ---
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@broker:29093'
+      KAFKA_LISTENERS: 'PLAINTEXT://broker:29092,CONTROLLER://broker:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      
+      # This variable tells the Confluent script to format the storage automatically
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+
+      # --- General Settings ---
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-        # Mandatory-ish: internal topic replication factor. For single-broker dev use 1; production >=3.
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-        # Optional — consumer group initial rebalance delay. 0 is useful for fast dev behavior.
-      KAFKA_CONFLEUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
-        # Optional — Confluent internal topic replication factor (use 1 in single-broker dev).
-      KAFKA_CONFLEUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
-        # Optional — Confluent balancer topic replication factor.
-      KAFKA_TRANSITION_STATE_LOG_REPLICATION_FACTOR: 1
-        # Optional — transition state log replication for Confluent features (dev=1).
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-        # Optional — In-Sync Replicas required for transaction state (dev=1).
-      KAFKA_JMX_PORT: 9101
-        # Optional — JMX port number for JVM monitoring. Expose via ports if you need remote JMX.
-      KAFKA_JMX_HOSTNAME: broker
-        # Optional — JMX hostname binding; used by JMX clients to connect.
-      CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: broker:9092
-        # Optional — where Confluent metrics reporter sends metrics (use a broker address).
-      CONFLUENT_METRICS_REPORTER_TOPIC_REPLICATION: 1
-        # Optional — replication factor for the metrics topic (dev=1).
-      CONFLUENT_METRICS_ENABLED: 'true'
-        # Optional — enable Confluent metrics reporter (true/false).
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: '/var/lib/kafka/data'
 
     networks:
       - airpulsenetwork
-    # Broker healthcheck: uses kafka-broker-api-versions to verify broker is ready to serve client requests.
     healthcheck:
       test: ["CMD", "bash", "-c", "kafka-broker-api-versions --bootstrap-server broker:9092 || exit 1"]
-      interval: 15s
+      interval: 10s
       timeout: 5s
-      retries: 8
+      retries: 5
 
   # -------------------
-  # Spark master
+  # Spark Master
   # -------------------
   spark-master:
-    # Match Spark version with workers: same pinned image for compatibility
     image: apache/spark:4.1.0-scala2.13-java21-python3-r-ubuntu
     hostname: spark-master
     container_name: spark-master
     volumes:
       - ./jobs:/opt/spark/jobs
     ports:
-      - "8080:8080"   # Spark master UI (host_port:container_port) — web UI for humans
-      - "7077:7077"   # Spark master RPC port — used by spark workers and clients (not a web UI)
+      - "8080:8080"   # Web UI
+      - "7077:7077"   # RPC Port
     environment:
       - SPARK_MODE=master
-        # Mandatory (practical) — identifies this container as the master (informational to entrypoint)
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
-        # Optional — set to 'yes' to require RPC authentication (production). Default depends on image.
       - SPARK_RPC_ENCRYPTION_ENABLED=no
-        # Optional — enable RPC encryption for transport (production). Use 'yes' + configure certs.
       - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-        # Optional — enable local disk encryption for shuffle files (production).
       - SPARK_SSL_ENABLED=no
-        # Optional — enable SSL for Spark web UIs and RPC (production).
     networks:
       - airpulsenetwork
-    # Robust Healthcheck:
-    # 1. Checks that the Master Web UI (8080) is serving the cluster status JSON (implies internal logic is ready).
-    # 2. Checks that the Master RPC Port (7077) is open using bash /dev/tcp (ensures workers can connect).
     healthcheck:
       test: ["CMD", "bash", "-c", "curl -sf http://spark-master:8080/json > /dev/null && echo > /dev/tcp/spark-master/7077"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s # Allow JVM start time
+      start_period: 10s
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077
 
-
   # -------------------
-  # Spark workers (reuse shared config via anchor)
+  # Spark Workers
   # -------------------
   spark-worker-1:
     <<: *spark-common
