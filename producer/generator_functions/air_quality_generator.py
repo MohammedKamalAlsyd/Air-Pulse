@@ -9,19 +9,7 @@ from datetime import datetime, timezone
 import math
 import random
 from typing import Optional, Dict, Any
-
-
-# ---------- helpers ----------
-
-def _ensure_utc(ts: datetime) -> datetime:
-    if ts.tzinfo is None:
-        return ts.replace(tzinfo=timezone.utc)
-    return ts
-
-
-def _clamp(v: float, low: float, high: float) -> float:
-    return max(low, min(high, v))
-
+from utils.main import ensure_utc, clamp
 
 # ---------- AQI logic ----------
 
@@ -49,7 +37,7 @@ def simulate_aqi(timestamp: datetime) -> int:
     - Morning & evening traffic peaks
     - Seasonal winter pollution bump
     """
-    ts = _ensure_utc(timestamp)
+    ts = ensure_utc(timestamp)
     hour = ts.hour + ts.minute / 60.0
     day_of_year = ts.timetuple().tm_yday
 
@@ -68,7 +56,7 @@ def simulate_aqi(timestamp: datetime) -> int:
         event = random.uniform(40, 120)
 
     value = seasonal + morning + evening + noise + event
-    return int(_clamp(value, 0, 500))
+    return int(clamp(value, 0, 500))
 
 
 # ---------- top-level generator ----------
@@ -84,7 +72,7 @@ def generate_air_quality(
     """
     if timestamp is None:
         timestamp = datetime.now(timezone.utc)
-    timestamp = _ensure_utc(timestamp)
+    timestamp = ensure_utc(timestamp)
 
     aqi = simulate_aqi(timestamp)
 

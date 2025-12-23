@@ -15,21 +15,9 @@ from datetime import datetime, timezone
 import math
 import random
 import uuid
+from utils.main import time_features, clamp
 from typing import Tuple, Optional, Dict, Any
 
-# ---------- Utility helpers ----------
-
-def _time_features(ts: datetime):
-    """Return hour_of_day (0-24 float), day_of_year (1-366), and seconds_since_midnight."""
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    hour = ts.hour + ts.minute / 60.0 + ts.second / 3600.0
-    day_of_year = ts.timetuple().tm_yday
-    seconds_since_midnight = ts.hour * 3600 + ts.minute * 60 + ts.second
-    return hour, day_of_year, seconds_since_midnight
-
-def _clamp(v: float, low: float, high: float) -> float:
-    return max(low, min(high, v))
 
 # ---------- Simulation functions (each takes timestamp) ----------
 
@@ -39,7 +27,7 @@ def simulate_pm25(timestamp: datetime, location: Optional[Tuple[float, float]] =
     - Higher during morning/evening traffic peaks.
     - Random short spikes occasionally.
     """
-    hour, day_of_year, _ = _time_features(timestamp)
+    hour, day_of_year, _ = time_features(timestamp)
 
     # baseline varies with season (slightly higher in winter)
     seasonal = 12 + 6 * math.cos(2 * math.pi * (day_of_year / 365.0))  # winter bump
@@ -56,7 +44,7 @@ def simulate_pm25(timestamp: datetime, location: Optional[Tuple[float, float]] =
         spike = random.uniform(20, 80)
 
     value = seasonal + diurnal + noise + spike
-    return round(_clamp(value, 0.0, 500.0), 2)
+    return round(clamp(value, 0.0, 500.0), 2)
 
 def simulate_co2(timestamp: datetime, location: Optional[Tuple[float, float]] = None) -> float:
     """
@@ -64,7 +52,7 @@ def simulate_co2(timestamp: datetime, location: Optional[Tuple[float, float]] = 
     - Baseline around ~400-420 (ambient)
     - Indoor/urban influence raises it during occupied times (daytime)
     """
-    hour, day_of_year, _ = _time_features(timestamp)
+    hour, day_of_year, _ = time_features(timestamp)
 
     # ambient baseline (slightly seasonal)
     seasonal = 410 + 6 * math.sin(2 * math.pi * (day_of_year / 365.0))
@@ -83,14 +71,14 @@ def simulate_co2(timestamp: datetime, location: Optional[Tuple[float, float]] = 
         spike = random.uniform(50, 300)
 
     value = seasonal + activity + noise + spike
-    return round(_clamp(value, 300.0, 5000.0), 2)
+    return round(clamp(value, 300.0, 5000.0), 2)
 
 def simulate_no2(timestamp: datetime, location: Optional[Tuple[float, float]] = None) -> float:
     """
     Simulate NO2 (ppb or µg/m3 depending on unit, treat as numeric index)
     - Traffic-correlated: morning & evening peaks.
     """
-    hour, day_of_year, _ = _time_features(timestamp)
+    hour, day_of_year, _ = time_features(timestamp)
 
     diurnal = 0.0
     diurnal += 30 * math.exp(-0.5 * ((hour - 8) / 1.5) ** 2)   # morning
@@ -105,7 +93,7 @@ def simulate_no2(timestamp: datetime, location: Optional[Tuple[float, float]] = 
         event = random.uniform(20, 80)
 
     value = background + diurnal + noise + event
-    return round(_clamp(value, 0.0, 1000.0), 2)
+    return round(clamp(value, 0.0, 1000.0), 2)
 
 def simulate_temperature(timestamp: datetime, location: Optional[Tuple[float, float]] = None) -> float:
     """
@@ -113,11 +101,11 @@ def simulate_temperature(timestamp: datetime, location: Optional[Tuple[float, fl
     - Uses seasonal (day_of_year) and diurnal (hour) sinusoids + noise.
     - Optionally modulate by latitude roughly if location given (simple approximation).
     """
-    hour, day_of_year, _ = _time_features(timestamp)
+    hour, day_of_year, _ = time_features(timestamp)
 
     # latitude-based seasonal amplitude modifier (optional)
     lat = location[0] if location else 0.0
-    lat_factor = _clamp(abs(lat) / 90.0, 0.0, 1.0)  # higher lat -> larger seasonality
+    lat_factor = clamp(abs(lat) / 90.0, 0.0, 1.0)  # higher lat -> larger seasonality
     # baseline average
     annual_avg = 15.0 - 10.0 * lat_factor  # crude: higher lat -> colder on avg
 
@@ -132,7 +120,7 @@ def simulate_temperature(timestamp: datetime, location: Optional[Tuple[float, fl
     noise = random.gauss(0, 0.8)
 
     value = annual_avg + seasonal + diurnal + noise
-    return round(_clamp(value, -50.0, 60.0), 2)
+    return round(clamp(value, -50.0, 60.0), 2)
 
 def simulate_humidity(timestamp: datetime, location: Optional[Tuple[float, float]] = None, temperature_c: Optional[float] = None) -> float:
     """
@@ -142,7 +130,7 @@ def simulate_humidity(timestamp: datetime, location: Optional[Tuple[float, float
     if temperature_c is None:
         temperature_c = simulate_temperature(timestamp, location)
 
-    hour, day_of_year, _ = _time_features(timestamp)
+    hour, day_of_year, _ = time_features(timestamp)
 
     # base humidity roughly decreases with temperature
     base = 65 - (temperature_c - 10) * 1.2
@@ -151,14 +139,14 @@ def simulate_humidity(timestamp: datetime, location: Optional[Tuple[float, float
     noise = random.gauss(0, 5)
 
     value = base + diurnal + noise
-    return round(_clamp(value, 0.0, 100.0), 2)
+    return round(clamp(value, 0.0, 100.0), 2)
 
 def simulate_noise_level(timestamp: datetime, location: Optional[Tuple[float, float]] = None) -> float:
     """
     Simulate ambient noise level (dB)
     - Higher during day, lower at night, with random short spikes.
     """
-    hour, day_of_year, _ = _time_features(timestamp)
+    hour, day_of_year, _ = time_features(timestamp)
 
     # day baseline and night dip
     day_component = 50 + 20 * math.exp(-0.5 * ((hour - 14) / 6.0) ** 2)
@@ -172,14 +160,14 @@ def simulate_noise_level(timestamp: datetime, location: Optional[Tuple[float, fl
         spike = random.uniform(10, 25)  # passing siren, heavy truck, construction
 
     value = day_component + traffic_bumps + noise + spike
-    return round(_clamp(value, 20.0, 140.0), 2)
+    return round(clamp(value, 20.0, 140.0), 2)
 
 def simulate_uv_index(timestamp: datetime, location: Optional[Tuple[float, float]] = None) -> float:
     """
     Simulate UV index (0-11+)
     - Zero at night; smooth bell curve around solar noon; scaled by season and latitude.
     """
-    hour, day_of_year, _ = _time_features(timestamp)
+    hour, day_of_year, _ = time_features(timestamp)
 
     # approximate solar noon effect: bell around 12-13
     if hour < 6 or hour > 18:
@@ -188,14 +176,14 @@ def simulate_uv_index(timestamp: datetime, location: Optional[Tuple[float, float
     # rough day length effect: longer days in summer -> higher UV
     seasonal_scale = 1.0 + 0.5 * math.sin(2 * math.pi * (day_of_year / 365.0 - 0.25))
     lat = location[0] if location else 0.0
-    lat_factor = _clamp(1.0 - abs(lat) / 60.0, 0.2, 1.0)  # lower at high latitudes
+    lat_factor = clamp(1.0 - abs(lat) / 60.0, 0.2, 1.0)  # lower at high latitudes
 
     bell = math.exp(-0.5 * ((hour - 12.5) / 2.5) ** 2)
     max_uv = 9.0 * seasonal_scale * lat_factor
     noise = random.gauss(0, 0.2)
 
     value = max_uv * bell + noise
-    return round(_clamp(value, 0.0, 15.0), 2)
+    return round(clamp(value, 0.0, 15.0), 2)
 
 # ---------- Top-level generator ----------
 

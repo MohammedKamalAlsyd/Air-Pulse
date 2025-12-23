@@ -11,18 +11,9 @@ from datetime import datetime, timezone
 import math
 import random
 from typing import Optional, Dict, Any
+from utils.main import ensure_utc, clamp
 
 
-# ---------- helpers ----------
-
-def _ensure_utc(ts: datetime) -> datetime:
-    if ts.tzinfo is None:
-        return ts.replace(tzinfo=timezone.utc)
-    return ts
-
-
-def _clamp(v: float, low: float, high: float) -> float:
-    return max(low, min(high, v))
 
 
 # ---------- simulation ----------
@@ -31,7 +22,7 @@ def simulate_temperature(timestamp: datetime, latitude: float) -> float:
     """
     City-scale temperature (°C).
     """
-    ts = _ensure_utc(timestamp)
+    ts = ensure_utc(timestamp)
     hour = ts.hour + ts.minute / 60.0
     day_of_year = ts.timetuple().tm_yday
 
@@ -42,7 +33,7 @@ def simulate_temperature(timestamp: datetime, latitude: float) -> float:
     diurnal = 5 * math.sin(2 * math.pi * (hour / 24.0 - 0.25))
     noise = random.gauss(0, 0.6)
 
-    return round(_clamp(annual_avg + seasonal + diurnal + noise, -30, 55), 1)
+    return round(clamp(annual_avg + seasonal + diurnal + noise, -30, 55), 1)
 
 
 def simulate_humidity(temperature_c: float) -> float:
@@ -51,7 +42,7 @@ def simulate_humidity(temperature_c: float) -> float:
     """
     base = 70 - (temperature_c - 15) * 1.1
     noise = random.gauss(0, 4)
-    return round(_clamp(base + noise, 10, 100), 0)
+    return round(clamp(base + noise, 10, 100), 0)
 
 
 def simulate_pressure(day_of_year: int) -> int:
@@ -60,7 +51,7 @@ def simulate_pressure(day_of_year: int) -> int:
     """
     seasonal = 8 * math.cos(2 * math.pi * (day_of_year / 365.0))
     noise = random.gauss(0, 2)
-    return int(_clamp(1013 + seasonal + noise, 980, 1045))
+    return int(clamp(1013 + seasonal + noise, 980, 1045))
 
 
 # ---------- top-level generator ----------
@@ -76,7 +67,7 @@ def generate_weather_context(
     """
     if timestamp is None:
         timestamp = datetime.now(timezone.utc)
-    timestamp = _ensure_utc(timestamp)
+    timestamp = ensure_utc(timestamp)
 
     temperature = simulate_temperature(timestamp, latitude)
     humidity = simulate_humidity(temperature)

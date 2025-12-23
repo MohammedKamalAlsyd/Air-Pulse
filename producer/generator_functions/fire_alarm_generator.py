@@ -9,14 +9,7 @@ from datetime import datetime, timezone
 import random
 import uuid
 from typing import Optional, Dict, Any
-
-
-# ---------- helpers ----------
-
-def _ensure_utc(ts: datetime) -> datetime:
-    if ts.tzinfo is None:
-        return ts.replace(tzinfo=timezone.utc)
-    return ts
+from utils.main import ensure_utc
 
 
 # ---------- simulation ----------
@@ -56,7 +49,7 @@ def generate_fire_alarm(
 
     if timestamp is None:
         timestamp = datetime.now(timezone.utc)
-    timestamp = _ensure_utc(timestamp)
+    timestamp = ensure_utc(timestamp)
 
     return {
         "event_id": str(uuid.uuid4()),

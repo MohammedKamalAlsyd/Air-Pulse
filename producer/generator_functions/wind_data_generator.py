@@ -8,22 +8,12 @@ Produces realistic wind speed and direction with persistence
 from datetime import datetime, timezone
 import random
 from typing import Optional, Dict, Any
+from utils.main import ensure_utc, clamp
 
 
 # ---------- helpers ----------
 
 DIRECTIONS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
-
-
-def _ensure_utc(ts: datetime) -> datetime:
-    if ts.tzinfo is None:
-        return ts.replace(tzinfo=timezone.utc)
-    return ts
-
-
-def _clamp(v: float, low: float, high: float) -> float:
-    return max(low, min(high, v))
-
 
 def _direction_from_degrees(deg: float) -> str:
     idx = int((deg + 22.5) // 45) % 8
@@ -42,7 +32,7 @@ def simulate_wind(
     speed_change = random.gauss(0, 0.6)
     direction_change = random.gauss(0, 15)
 
-    speed = _clamp(prev_speed + speed_change, 0.0, 30.0)
+    speed = clamp(prev_speed + speed_change, 0.0, 30.0)
     direction = (prev_direction_deg + direction_change) % 360
 
     return round(speed, 1), round(direction, 1)
@@ -61,7 +51,7 @@ def generate_wind_data(
     """
     if timestamp is None:
         timestamp = datetime.now(timezone.utc)
-    timestamp = _ensure_utc(timestamp)
+    timestamp = ensure_utc(timestamp)
 
     speed, direction_deg = simulate_wind(prev_speed, prev_direction_deg)
 

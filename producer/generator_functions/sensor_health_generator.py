@@ -12,21 +12,11 @@ Designed for:
 - stateful Spark processing
 """
 
-from datetime import datetime, timezone
 import random
+from datetime import datetime, timezone
+from utils.main import ensure_utc, clamp
 from typing import Optional, Dict, Any
 
-
-# ---------- helpers ----------
-
-def _clamp(v: float, low: float, high: float) -> float:
-    return max(low, min(high, v))
-
-
-def _ensure_utc(ts: datetime) -> datetime:
-    if ts.tzinfo is None:
-        return ts.replace(tzinfo=timezone.utc)
-    return ts
 
 
 # ---------- simulation functions ----------
@@ -51,7 +41,7 @@ def simulate_battery_level(
         return random.randint(90, 100)
 
     value = previous_level - drain
-    return int(_clamp(value, 0, 100))
+    return int(clamp(value, 0, 100))
 
 
 def simulate_signal_strength() -> int:
@@ -70,7 +60,7 @@ def simulate_signal_strength() -> int:
     if random.random() < 0.03:
         base -= random.uniform(10, 25)
 
-    return int(_clamp(base, -120, -30))
+    return int(clamp(base, -120, -30))
 
 
 def determine_status(
@@ -124,7 +114,7 @@ def generate_sensor_health(
     """
     if timestamp is None:
         timestamp = datetime.now(timezone.utc)
-    timestamp = _ensure_utc(timestamp)
+    timestamp = ensure_utc(timestamp)
 
     battery_level = simulate_battery_level(previous_battery_level)
     signal_strength = simulate_signal_strength()
