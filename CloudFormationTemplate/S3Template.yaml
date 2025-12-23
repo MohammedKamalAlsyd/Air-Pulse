@@ -1,0 +1,360 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Create S3 buckets + IAM roles for Glue crawler, Athena, and Redshift Spectrum.
+  Buckets support read, write, update and delete operations. Optional KMS encryption.
+
+Parameters:
+  DataBucketName:
+    Type: String
+    Default: ""
+    Description: Optional unique name for the S3 bucket where streaming Parquet data will be stored. Leave empty to auto-generate a unique name.
+  QueryResultsBucketName:
+    Type: String
+    Default: ""
+    Description: Optional unique name for the S3 bucket where Athena query results (and CTAS/UNLOAD) will be stored. Leave empty to auto-generate a unique name.
+  KmsKeyArn:
+    Type: String
+    Default: ""
+    Description: (Optional) ARN of a KMS key to use for server-side encryption. Leave empty to use SSE-S3 (AES256).
+
+Conditions:
+  HasKmsKey: !Not [!Equals [!Ref KmsKeyArn, ""]]
+  HasProvidedDataBucket: !Not [!Equals [!Ref DataBucketName, ""]]
+  HasProvidedQueryResultsBucket: !Not [!Equals [!Ref QueryResultsBucketName, ""]]
+
+Resources:
+  #####################################################
+  # S3 Buckets
+  #####################################################
+
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !If
+        - HasProvidedDataBucket
+        - !Ref DataBucketName
+        - !Join
+          - "-"
+          - - "airpulse-data"
+            - !Ref "AWS::AccountId"
+            - !Select [2, !Split ["/", !Ref "AWS::StackId"]]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption: !If
+        - HasKmsKey
+        - ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: aws:kms
+                KMSMasterKeyID: !Ref KmsKeyArn
+        - ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+
+  QueryResultsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !If
+        - HasProvidedQueryResultsBucket
+        - !Ref QueryResultsBucketName
+        - !Join
+          - "-"
+          - - "airpulse-qr"
+            - !Ref "AWS::AccountId"
+            - !Select [2, !Split ["/", !Ref "AWS::StackId"]]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption: !If
+        - HasKmsKey
+        - ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: aws:kms
+                KMSMasterKeyID: !Ref KmsKeyArn
+        - ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+
+  # Defensive bucket policies: require SSL and deny public access
+  DataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DataBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyNonSSL
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt DataBucket.Arn
+              - !Sub "${DataBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  QueryResultsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref QueryResultsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyNonSSL
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt QueryResultsBucket.Arn
+              - !Sub "${QueryResultsBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  #####################################################
+  # IAM Roles: Glue Crawler, Athena, Redshift Spectrum
+  #####################################################
+
+  GlueCrawlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-GlueCrawlerRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: !Sub "${AWS::StackName}-GlueCrawler-S3-Glue-Policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: GlueS3FullAccessToBuckets
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:AbortMultipartUpload
+                  - s3:ListMultipartUploadParts
+                Resource:
+                  - !GetAtt DataBucket.Arn
+                  - !Sub "${DataBucket.Arn}/*"
+                  - !GetAtt QueryResultsBucket.Arn
+                  - !Sub "${QueryResultsBucket.Arn}/*"
+              - Sid: GlueCatalogAccess
+                Effect: Allow
+                Action:
+                  - glue:CreateTable
+                  - glue:UpdateTable
+                  - glue:DeleteTable
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:GetDatabase
+                  - glue:GetDatabases
+                  - glue:CreateDatabase
+                  - glue:UpdateDatabase
+                  - glue:DeleteDatabase
+                  - glue:BatchCreatePartition
+                  - glue:CreatePartition
+                  - glue:GetPartition
+                  - glue:GetPartitions
+                  - glue:BatchDeletePartition
+                Resource:
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*"
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*/*"
+              - Sid: CloudWatchLogsForGlue
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws-glue/*"
+              - !If
+                - HasKmsKey
+                - Sid: KmsAccessIfProvidedForGlue
+                  Effect: Allow
+                  Action:
+                    - kms:Decrypt
+                    - kms:GenerateDataKey
+                  Resource: !Ref KmsKeyArn
+                - !Ref "AWS::NoValue"
+
+  AthenaQueryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-AthenaQueryRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - athena.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: !Sub "${AWS::StackName}-Athena-S3-Glue-Policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AthenaS3ReadDataBucket
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - !GetAtt DataBucket.Arn
+                  - !Sub "${DataBucket.Arn}/*"
+              - Sid: AthenaS3WriteQueryResults
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:AbortMultipartUpload
+                  - s3:ListMultipartUploadParts
+                  - s3:DeleteObject
+                Resource:
+                  - !GetAtt QueryResultsBucket.Arn
+                  - !Sub "${QueryResultsBucket.Arn}/*"
+              - Sid: AthenaGlueRead
+                Effect: Allow
+                Action:
+                  - glue:GetDatabase
+                  - glue:GetDatabases
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:GetPartition
+                  - glue:GetPartitions
+                  - glue:GetTableVersion
+                  - glue:GetTableVersions
+                  - glue:GetUserDefinedFunctions
+                Resource:
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*"
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*/*"
+              - Sid: AthenaQueryExecution
+                Effect: Allow
+                Action:
+                  - athena:StartQueryExecution
+                  - athena:GetQueryExecution
+                  - athena:GetQueryResults
+                  - athena:GetQueryResultsStream
+                Resource: "*"
+              - !If
+                - HasKmsKey
+                - Sid: KmsAccessIfProvided
+                  Effect: Allow
+                  Action:
+                    - kms:Decrypt
+                    - kms:GenerateDataKey
+                  Resource: !Ref KmsKeyArn
+                - !Ref "AWS::NoValue"
+
+  RedshiftSpectrumRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-RedshiftSpectrumRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - redshift.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: !Sub "${AWS::StackName}-Redshift-S3-Glue-Policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: RedshiftS3FullAccessToData
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListMultipartUploadParts
+                  - s3:AbortMultipartUpload
+                Resource:
+                  - !GetAtt DataBucket.Arn
+                  - !Sub "${DataBucket.Arn}/*"
+              - Sid: RedshiftGlueRead
+                Effect: Allow
+                Action:
+                  - glue:GetDatabase
+                  - glue:GetDatabases
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:GetPartition
+                  - glue:GetPartitions
+                  - glue:GetTableVersion
+                  - glue:GetTableVersions
+                  - glue:GetUserDefinedFunctions
+                Resource:
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*"
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*/*"
+              - Sid: RedshiftQueryResultsWriteOptional
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource:
+                  - !GetAtt QueryResultsBucket.Arn
+                  - !Sub "${QueryResultsBucket.Arn}/*"
+              - !If
+                - HasKmsKey
+                - Sid: KmsAccessIfProvidedForRedshift
+                  Effect: Allow
+                  Action:
+                    - kms:Decrypt
+                    - kms:GenerateDataKey
+                  Resource: !Ref KmsKeyArn
+                - !Ref "AWS::NoValue"
+
+Outputs:
+  DataBucketNameOut:
+    Description: Name of the data bucket
+    Value: !Ref DataBucket
+
+  DataBucketArnOut:
+    Description: ARN of the data bucket
+    Value: !GetAtt DataBucket.Arn
+
+  QueryResultsBucketNameOut:
+    Description: Name of the query results bucket
+    Value: !Ref QueryResultsBucket
+
+  QueryResultsBucketArnOut:
+    Description: ARN of the query results bucket
+    Value: !GetAtt QueryResultsBucket.Arn
+
+  GlueCrawlerRoleArn:
+    Description: ARN of the Glue crawler role (use when creating Glue crawler)
+    Value: !GetAtt GlueCrawlerRole.Arn
+
+  AthenaQueryRoleArn:
+    Description: ARN of the Athena role (use for Athena CTAS/UNLOAD/federation connectors)
+    Value: !GetAtt AthenaQueryRole.Arn
+
+  RedshiftSpectrumRoleArn:
+    Description: ARN of the Redshift role. Attach this IAM role to your Redshift cluster for Spectrum/Glue access.
+    Value: !GetAtt RedshiftSpectrumRole.Arn
