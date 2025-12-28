@@ -14,7 +14,7 @@ JOB_FILE_PATH = "/opt/spark/jobs/streaming.py"
 PACKAGES = [
     "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.0",
     "org.apache.hadoop:hadoop-aws:3.4.2",
-    "com.amazonaws:aws-java-sdk-bundle:1.12.796"
+    "com.amazonaws:aws-java-sdk-s3:1.12.796"
 ]
 
 # The name of the Spark Master container in docker-compose
@@ -35,6 +35,7 @@ def run_spark_job():
         "/opt/spark/bin/spark-submit",
         "--master", SPARK_MASTER_URL,
         "--packages", packages_arg,
+        "--conf", "spark.jars.ivy=/tmp/.ivy",
         "--conf", "spark.driver.extraJavaOptions=-Duser.timezone=UTC",
         "--conf", "spark.executor.extraJavaOptions=-Duser.timezone=UTC",
         JOB_FILE_PATH

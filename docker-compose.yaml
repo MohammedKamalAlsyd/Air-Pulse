@@ -107,15 +107,15 @@ services:
     container_name: spark-worker-1
     hostname: spark-worker-1
 
-  spark-worker-2:
-    <<: *spark-common
-    container_name: spark-worker-2
-    hostname: spark-worker-2
+  # spark-worker-2:
+  #   <<: *spark-common
+  #   container_name: spark-worker-2
+  #   hostname: spark-worker-2
 
-  spark-worker-3:
-    <<: *spark-common
-    container_name: spark-worker-3
-    hostname: spark-worker-3
+  # spark-worker-3:
+  #   <<: *spark-common
+  #   container_name: spark-worker-3
+  #   hostname: spark-worker-3
 
 
 # network declaration (bridge is fine for local development)

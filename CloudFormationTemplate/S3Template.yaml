@@ -7,10 +7,12 @@ Parameters:
   DataBucketName:
     Type: String
     Default: ""
+    AllowedPattern: "^$|^[a-z0-9][a-z0-9.-]*[a-z0-9]$"
     Description: Optional unique name for the S3 bucket where streaming Parquet data will be stored. Leave empty to auto-generate a unique name.
   QueryResultsBucketName:
     Type: String
     Default: ""
+    AllowedPattern: "^$|^[a-z0-9][a-z0-9.-]*[a-z0-9]$"
     Description: Optional unique name for the S3 bucket where Athena query results (and CTAS/UNLOAD) will be stored. Leave empty to auto-generate a unique name.
   KmsKeyArn:
     Type: String
